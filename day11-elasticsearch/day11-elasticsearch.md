@@ -875,7 +875,7 @@ POST /索引库名/类型名
 > 示例：
 
 ```json
-POST /heima/goods/
+POST /heima/_doc/
 {
     "title":"小米手机",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -952,7 +952,7 @@ POST /索引库名/类型/id值
 示例：
 
 ```json
-POST /heima/goods/2
+POST /heima/_doc/2
 {
     "title":"大米手机",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -989,7 +989,7 @@ POST /heima/goods/2
 测试一下：
 
 ```json
-POST /heima/goods/3
+POST /heima/_doc/3
 {
     "title":"超米手机",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -1064,7 +1064,7 @@ stock和saleable都被成功映射了。
 比如，我们把id为3的数据进行修改：
 
 ```json
-PUT /heima/goods/3
+PUT /heima/_doc/3
 {
     "title":"超大米手机",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -1240,7 +1240,7 @@ GET /heima/_search
 我们先加入一条数据，便于测试：
 
 ```json
-PUT /heima/goods/3
+PUT /heima/_doc/3
 {
     "title":"小米电视4A",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -1715,7 +1715,7 @@ GET /heima/_search
 我们新增一个商品：
 
 ```json
-POST /heima/goods/4
+POST /heima/_doc/4
 {
     "title":"apple手机",
     "images":"http://image.leyou.com/12479122.jpg",
@@ -1795,6 +1795,7 @@ GET /heima/_search
             	 "range":{"price":{"gt":2000.00,"lt":3000.00}}
             }
         }
+    }
 }
 ```
 
@@ -1914,14 +1915,12 @@ PUT /cars
     "number_of_replicas": 0
   },
   "mappings": {
-    "transactions": {
-      "properties": {
-        "color": {
-          "type": "keyword"
-        },
-        "make": {
-          "type": "keyword"
-        }
+    "properties": {
+      "color": {
+        "type": "keyword"
+      },
+      "make": {
+        "type": "keyword"
       }
     }
   }
@@ -1935,7 +1934,7 @@ PUT /cars
 导入数据
 
 ```json
-POST /cars/transactions/_bulk
+POST /cars/_bulk
 { "index": {}}
 { "price" : 10000, "color" : "red", "make" : "honda", "sold" : "2014-10-28" }
 { "index": {}}
@@ -2771,14 +2770,14 @@ Spring Data 的强大之处，就在于你不用写任何DAO处理，自动根�
 
 我们只需要定义接口，然后继承它就OK了。
 
- ![1531987244855](../../../../%E6%95%99%E5%AD%A6/leyou1/day11/%E7%AC%94%E8%AE%B0/assets/1531987244855.png)
+ ![1531987244855](assets/1531987244855.png)
 
 ```java
 public interface ItemRepository extends ElasticsearchRepository<Item,Long> {
 }
 ```
 
-![](G:\SSM\ssm\乐优\乐优商城《项目笔记》\day11笔记\assets\1531987244855.png)
+![](./assets/1531987244855.png)
 
 来看下Repository的继承关系：
 
@@ -3190,24 +3189,52 @@ public void testAgg(){
     // 不查询任何结果
     queryBuilder.withSourceFilter(new FetchSourceFilter(new String[]{""}, null));
     // 1、添加一个新的聚合，聚合类型为terms，聚合名称为brands，聚合字段为brand
-    queryBuilder.addAggregation(
-        AggregationBuilders.terms("brands").field("brand"));
+    queryBuilder.addAggregation(AggregationBuilders.terms("brands").field("brand"));
     // 2、查询,需要把结果强转为AggregatedPage类型
     AggregatedPage<Item> aggPage = (AggregatedPage<Item>) this.itemRepository.search(queryBuilder.build());
     // 3、解析
     // 3.1、从结果中取出名为brands的那个聚合，
-    // 因为是利用String类型字段来进行的term聚合，所以结果要强转为StringTerm类型
-    StringTerms agg = (StringTerms) aggPage.getAggregation("brands");
+    // 需要转为Terms类型
+    final Terms agg = (Terms) aggPage.getAggregation("brands");
+    //        Terms agg = aggPage.getAggregations().get("brands");
     // 3.2、获取桶
-    List<StringTerms.Bucket> buckets = agg.getBuckets();
+    final List<? extends Terms.Bucket> buckets = agg.getBuckets();
     // 3.3、遍历
-    for (StringTerms.Bucket bucket : buckets) {
-        // 3.4、获取桶中的key，即品牌名称
-        System.out.println(bucket.getKeyAsString());
-        // 3.5、获取桶中的文档数量
-        System.out.println(bucket.getDocCount());
+    for (Terms.Bucket bucket : buckets) {
+      // 3.4、获取桶中的key，即品牌名称
+      System.out.println(bucket.getKeyAsString());
+      // 3.5、获取桶中的文档数量
+      System.out.println(bucket.getDocCount());
     }
+}
 
+@Test
+public void testAgg2() {
+    final NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder();
+    String aggName = "popularBrand";
+    // 聚合
+    queryBuilder.addAggregation(
+      AggregationBuilders.terms(aggName).field("brand")
+      .subAggregation(AggregationBuilders.avg("priceAvg").field("price"))
+    );
+
+    // 查询并返回带聚合的结果
+    final AggregatedPage<Item> result = template.queryForPage(queryBuilder.build(), Item.class);
+
+    // 解析聚合
+    final Aggregations aggs = result.getAggregations();
+
+    // 获取指定名称的聚合
+    Terms terms = aggs.get(aggName);
+
+    // 获取桶
+    final List<? extends Terms.Bucket> buckets = terms.getBuckets();
+    for (Terms.Bucket bucket : buckets) {
+      System.out.println("key = " + bucket.getKeyAsString());
+      System.out.println("bucket.getDocCount() = " + bucket.getDocCount());
+      final Avg avg = bucket.getAggregations().get("priceAvg");
+      System.out.println("avg: " + avg.getValue());
+    }
 }
 ```
 
@@ -3250,34 +3277,34 @@ public void testAgg(){
 代码：
 
 ```java
+// 嵌套聚合,求平均值
 @Test
-public void testSubAgg(){
-    NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder();
+public void testSubAgg() {
+    final NativeSearchQueryBuilder queryBuilder = new NativeSearchQueryBuilder();
     // 不查询任何结果
     queryBuilder.withSourceFilter(new FetchSourceFilter(new String[]{""}, null));
-    // 1、添加一个新的聚合，聚合类型为terms，聚合名称为brands，聚合字段为brand
+    // 1. 添加一个新的聚合,聚合类型为 terms 聚合名称为 brands, 聚合字段为 brand
     queryBuilder.addAggregation(
-        AggregationBuilders.terms("brands").field("brand")
-        .subAggregation(AggregationBuilders.avg("priceAvg").field("price")) // 在品牌聚合桶内进行嵌套聚合，求平均值
+      AggregationBuilders.terms("brands").field("brand")
+      .subAggregation(AggregationBuilders.avg("priceAvg").field("price")) // 在品牌聚合桶中嵌套聚合,求平均值
     );
-    // 2、查询,需要把结果强转为AggregatedPage类型
-    AggregatedPage<Item> aggPage = (AggregatedPage<Item>) this.itemRepository.search(queryBuilder.build());
-    // 3、解析
-    // 3.1、从结果中取出名为brands的那个聚合，
-    // 因为是利用String类型字段来进行的term聚合，所以结果要强转为StringTerm类型
-    StringTerms agg = (StringTerms) aggPage.getAggregation("brands");
-    // 3.2、获取桶
-    List<StringTerms.Bucket> buckets = agg.getBuckets();
-    // 3.3、遍历
-    for (StringTerms.Bucket bucket : buckets) {
-        // 3.4、获取桶中的key，即品牌名称  3.5、获取桶中的文档数量
-        System.out.println(bucket.getKeyAsString() + "，共" + bucket.getDocCount() + "台");
+    // 2. 查询,需要把结果转为 AggregatedPage 类型
+    final AggregatedPage<Item> aggPage = (AggregatedPage<Item>)itemRepository.search(queryBuilder.build());
+    // 3. 解析
+    // 3.1 从结果中取出名为 brands 的聚合
+    final Terms brands = (Terms)aggPage.getAggregation("brands");
+    // 3.2 获取桶
+    final List<? extends Terms.Bucket> buckets = brands.getBuckets();
+    // 3.3 遍历
+    for (Terms.Bucket bucket : buckets) {
+      // 3.4 取出桶中的 key,即品牌名称, 3.5 获取桶中文档的数量
+      System.out.println(bucket.getKeyAsString() + ", 共" + bucket.getDocCount() + "台");
 
-        // 3.6.获取子聚合结果：
-        InternalAvg avg = (InternalAvg) bucket.getAggregations().asMap().get("priceAvg");
-        System.out.println("平均售价：" + avg.getValue());
+      // 3.6 获取子聚合结果
+      //            final Avg avg = (Avg) bucket.getAggregations().asMap().get("priceAvg");
+      final Avg avg = bucket.getAggregations().get("priceAvg");
+      System.out.println("平均售价:" + avg.getValue());
     }
-
 }
 ```
 

@@ -723,7 +723,7 @@ public class GoodsController {
 
 我们在`head`的script标签中，对索引对象进行初始化：
 
- ![1529923658242](H:assets/1529923658242.png)
+ ![1529923658242](assets/1529923658242.png)
 
 然后在vue中保存：
 
